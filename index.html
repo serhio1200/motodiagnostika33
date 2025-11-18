@@ -1000,7 +1000,8 @@
                         totalSize += photo.data.length;
                     });
                 });
-                const maxSize = 45 * 1024 * 1024;
+                // УВЕЛИЧИЛИ ЛИМИТ ХРАНИЛИЩА ДО 200 МБ
+                const maxSize = 200 * 1024 * 1024;
                 filesToProcess.forEach(file => {
                     if (file.type.startsWith('image/')) {
                         this.compressImage(file).then(compressedFile => {
@@ -1066,7 +1067,7 @@
                     }
                 });
             },
-            compressImage(file, maxWidth = 1200, quality = 0.7) {
+            compressImage(file, maxWidth = 800, quality = 0.6) {
                 return new Promise((resolve, reject) => {
                     const reader = new FileReader();
                     reader.onload = (e) => {
@@ -1103,7 +1104,8 @@
                     });
                     const dataStr = JSON.stringify(this.state.currentPhotos);
                     const sizeInMB = (dataStr.length / (1024 * 1024)).toFixed(2);
-                    if (dataStr.length > 45 * 1024 * 1024) {
+                    // УВЕЛИЧИЛИ ЛИМИТ ХРАНИЛИЩА ДО 200 МБ
+                    if (dataStr.length > 200 * 1024 * 1024) {
                         this.showToast('Внимание: Размер фотографий接近 лимита хранилища. Рекомендуется удалить некоторые фото.', 'warning');
                         return false;
                     }
