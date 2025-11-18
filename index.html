@@ -3,10 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>МотоДиагностика PRO - Профессиональный подбор мотоциклов</title>
+    <title>Motopodbor.ru PRO - Профессиональный подбор мотоциклов</title>
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="МотоДиагностика PRO">
+    <meta name="apple-mobile-web-app-title" content="Motopodbor.ru PRO">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="theme-color" content="#6366F1">
     <meta name="description" content="Профессиональная диагностика и подбор мотоциклов">
@@ -196,7 +196,7 @@
 <body>
     <div class="app-container">
         <header class="app-header">
-            <h1>🏍️ МотоДиагностика PRO</h1>
+            <h1>🏍️ Motopodbor.ru PRO</h1>
             <p>Профессиональный подбор и диагностика мотоциклов</p>
         </header>
         <nav class="nav-tabs">
@@ -409,7 +409,7 @@
                     <div class="card">
                         <div class="form-group">
                             <label for="inspection_exterior">Титульный лист</label>
-                            <textarea id="inspection_exterior" name="inspection_exterior" rows="2" placeholder="Основная информация для титульного листа..." data-tooltip="Информация для титульного листа отчета"></textarea>
+                            <textarea id="inspection_exterior" name="inspection_exterior" rows="2" placeholder="Основная информация для титульного листа..."></textarea>
                             <div class="photo-upload-section">
                                 <label class="photo-upload-label">📷 Фотография титульного листа (максимум 1)</label>
                                 <input type="file" class="photo-upload-input" data-section="exterior" accept="image/*" multiple>
@@ -629,6 +629,7 @@
                                 <option value="✅ Куплен">✅ Куплен</option>
                                 <option value="❌ Не Куплен">❌ Не Куплен</option>
                                 <option value="📅 Запланировать проверку">📅 Запланировать проверку</option>
+                                <option value="⏳ На рассмотрение">⏳ На рассмотрение</option>
                             </select>
                         </div>
                         <div class="inspection-fields hidden" id="inspectionFields">
@@ -772,7 +773,7 @@
                 </div>
                 <div class="settings-group">
                     <div class="settings-label">Уведомления</div>
-                    <div class="settings-description">Управление системными уведомлениями</div>
+                    <div class="settings-description">Управление системными уведомления</div>
                     <div class="toggle-container">
                         <span class="toggle-label">Звуковые уведомления</span>
                         <label class="toggle-switch">
@@ -951,7 +952,7 @@
                 const versionDateEl = document.getElementById('appVersionDate');
                 if (versionDateEl) versionDateEl.textContent = new Date().getFullYear();
                 this.checkInspectionReminders();
-                console.log('МотоДиагностика PRO инициализирована');
+                console.log('Motopodbor.ru PRO инициализирована');
             },
             initBasicComponents() {
                 this.initNavigation();
@@ -2103,9 +2104,9 @@
                     doc.setProperties({
                         title: `Отчет по мотоциклу ${data.brand || ''} ${data.model || ''}`,
                         subject: 'Диагностический отчет',
-                        author: 'МотоДиагностика PRO',
+                        author: 'Motopodbor.ru PRO',
                         keywords: 'мотоцикл, диагностика, отчет',
-                        creator: 'МотоДиагностика PRO'
+                        creator: 'Motopodbor.ru PRO'
                     });
                     const tempContainer = document.createElement('div');
                     tempContainer.style.width = '210mm';
@@ -2166,13 +2167,102 @@
                 const brand = data.brand === 'Другая марка' ? data.brand_custom : data.brand;
                 const model = data.model === 'Другая модель' ? data.model_custom : data.model;
                 const currentDate = new Date().toLocaleDateString('ru-RU');
+                
+                // Подсчет общего количества страниц
+                let totalPages = 1; // первая страница
+                
+                const inspectionFields = [
+                    { section: 'geometry', label: 'Внешний вид', value: data.inspection_geometry },
+                    { section: 'engine', label: 'Осмотр Общий', value: data.inspection_engine },
+                    { section: 'consumables', label: 'Состояние ЛКП', value: data.inspection_consumables },
+                    { section: 'electrical', label: 'Состояние Сиденья', value: data.inspection_electrical },
+                    { section: 'suspension', label: 'Осмотр Оптики', value: data.inspection_suspension },
+                    { section: 'fuel_system', label: 'Рама, Швы, Вторичная окраска', value: data.inspection_fuel_system },
+                    { section: 'brake_system', label: 'Криминал, Вин номера, Номера Двигателя', value: data.inspection_brake_system },
+                    { section: 'cooling_system', label: 'Геометрия, Подрамника, руля, вилки', value: data.inspection_cooling_system },
+                    { section: 'controls', label: 'Органы управления', value: data.inspection_controls },
+                    { section: 'additional_equipment', label: 'Моторный Узел', value: data.inspection_additional_equipment },
+                    { section: 'bodywork', label: 'Топливная система', value: data.inspection_bodywork },
+                    { section: 'electrical_new', label: 'Система охлаждения', value: data.inspection_electrical_new },
+                    { section: 'brake_system_new', label: 'Электрооборудование', value: data.inspection_brake_system_new },
+                    { section: 'drive', label: 'Тормозная система', value: data.inspection_drive },
+                    { section: 'tires', label: 'Привод', value: data.inspection_tires },
+                    { section: 'suspension_front_rear', label: 'Резина', value: data.inspection_suspension_front_rear },
+                    { section: 'computer_diagnostics', label: 'Подвеска перед, зад', value: data.inspection_computer_diagnostics },
+                    { section: 'additional_equipment_new', label: 'Компьютерная Диагностика', value: data.inspection_additional_equipment_new },
+                    { section: 'final', label: 'Дополнительное оборудование', value: data.inspection_final }
+                ];
+                
+                inspectionFields.forEach(field => {
+                    const hasText = field.value && field.value.trim() !== '';
+                    const hasPhotos = this.state.currentPhotos[field.section] && this.state.currentPhotos[field.section].length > 0;
+                    if (hasText || hasPhotos) {
+                        const photos = hasPhotos ? this.state.currentPhotos[field.section] : [];
+                        const photosPerPage = 4;
+                        const photoGroups = [];
+                        for (let i = 0; i < photos.length; i += photosPerPage) {
+                            photoGroups.push(photos.slice(i, i + photosPerPage));
+                        }
+                        if (photoGroups.length === 0) {
+                            totalPages++;
+                        } else {
+                            totalPages += photoGroups.length;
+                        }
+                    }
+                });
+
+                // Добавляем страницу соглашения
+                totalPages++;
+
+                let currentPage = 1;
+                let html = '';
+
+                // Первая страница
+                html += this.generateFirstPage(data, currentPage, totalPages, currentDate);
+                currentPage++;
+
+                // Страницы проверок
+                inspectionFields.forEach(field => {
+                    const hasText = field.value && field.value.trim() !== '';
+                    const hasPhotos = this.state.currentPhotos[field.section] && this.state.currentPhotos[field.section].length > 0;
+                    if (hasText || hasPhotos) {
+                        const photos = hasPhotos ? this.state.currentPhotos[field.section] : [];
+                        const photosPerPage = 4;
+                        const photoGroups = [];
+                        for (let i = 0; i < photos.length; i += photosPerPage) {
+                            photoGroups.push(photos.slice(i, i + photosPerPage));
+                        }
+                        if (photoGroups.length === 0) {
+                            html += this.generateInspectionPage(field, hasText ? field.value : null, [], currentPage, totalPages, false, brand, model, currentDate);
+                            currentPage++;
+                        } else {
+                            photoGroups.forEach((group, index) => {
+                                const isFirstPage = index === 0;
+                                const isContinued = index > 0;
+                                const pageText = isFirstPage && hasText ? field.value : null;
+                                html += this.generateInspectionPage(field, pageText, group, currentPage, totalPages, isContinued, brand, model, currentDate);
+                                currentPage++;
+                            });
+                        }
+                    }
+                });
+
+                // Страница соглашения (последняя страница)
+                html += this.generateAgreementPage(currentPage, totalPages, currentDate);
+
+                return html;
+            },
+            generateFirstPage(data, currentPage, totalPages, currentDate) {
+                const brand = data.brand === 'Другая марка' ? data.brand_custom : data.brand;
+                const model = data.model === 'Другая модель' ? data.model_custom : data.model;
+                
                 let html = `
                 <div class="pdf-template">
                     <div class="pdf-page">
                         <div style="position: absolute; top: 5mm; right: 5mm; font-size: 30px; opacity: 0.1; color: #ccc; transform: rotate(-45deg);">motopodbor.ru</div>
                         <div style="text-align: center; margin-bottom: 15px;">
                             <h1 style="font-size: 20px; margin-bottom: 6px; color: #333;">ОТЧЕТ О ДИАГНОСТИКЕ МОТОЦИКЛА</h1>
-                            <p style="font-size: 12px; color: #666;">МотоДиагностика PRO - Профессиональная диагностика и подбор мотоциклов</p>
+                            <p style="font-size: 12px; color: #666;">Motopodbor.ru PRO - Профессиональная диагностика и подбор мотоциклов</p>
                         </div>
                         <div style="display: flex; gap: 15px; margin-bottom: 15px;">
                             <div style="flex: 1;">
@@ -2313,8 +2403,8 @@
                         ` : ''}
                         ${data.decision ? `
                         <h2 style="font-size: 16px; margin: 15px 0 10px 0; padding-bottom: 6px; border-bottom: 2px solid #3498db;">Решение</h2>
-                        <div style="background: ${data.decision === '✅ Куплен' ? '#d4edda' : data.decision === '❌ Не Куплен' ? '#f8d7da' : '#fff3cd'}; 
-                                    padding: 10px; border-radius: 5px; border-left: 4px solid ${data.decision === '✅ Куплен' ? '#28a745' : data.decision === '❌ Не Куплен' ? '#dc3545' : '#ffc107'}; margin-bottom: 12px;">
+                        <div style="background: ${data.decision === '✅ Куплен' ? '#d4edda' : data.decision === '❌ Не Куплен' ? '#f8d7da' : data.decision === '⏳ На рассмотрение' ? '#fff3cd' : '#e8f4fd'}; 
+                                    padding: 10px; border-radius: 5px; border-left: 4px solid ${data.decision === '✅ Куплен' ? '#28a745' : data.decision === '❌ Не Куплен' ? '#dc3545' : data.decision === '⏳ На рассмотрение' ? '#ffc107' : '#3498db'}; margin-bottom: 12px;">
                             <strong>Решение:</strong> ${this.escapeHtml(data.decision)}
                         </div>
                         ` : ''}
@@ -2322,62 +2412,16 @@
                             Отчет сгенерирован: ${currentDate} | Сергей Ландик 8 950 005-05-08 | motopodbor.ru
                         </div>
                         <div style="position: absolute; bottom: 5mm; right: 8mm; font-size: 9px; color: #666;">
-                            Страница 1
+                            Страница ${currentPage} из ${totalPages}
                         </div>
                     </div>
                 `;
-                const inspectionFields = [
-                    { section: 'geometry', label: 'Внешний вид', value: data.inspection_geometry },
-                    { section: 'engine', label: 'Осмотр Общий', value: data.inspection_engine },
-                    { section: 'consumables', label: 'Состояние ЛКП', value: data.inspection_consumables },
-                    { section: 'electrical', label: 'Состояние Сиденья', value: data.inspection_electrical },
-                    { section: 'suspension', label: 'Осмотр Оптики', value: data.inspection_suspension },
-                    { section: 'fuel_system', label: 'Рама, Швы, Вторичная окраска', value: data.inspection_fuel_system },
-                    { section: 'brake_system', label: 'Криминал, Вин номера, Номера Двигателя', value: data.inspection_brake_system },
-                    { section: 'cooling_system', label: 'Геометрия, Подрамника, руля, вилки', value: data.inspection_cooling_system },
-                    { section: 'controls', label: 'Органы управления', value: data.inspection_controls },
-                    { section: 'additional_equipment', label: 'Моторный Узел', value: data.inspection_additional_equipment },
-                    { section: 'bodywork', label: 'Топливная система', value: data.inspection_bodywork },
-                    { section: 'electrical_new', label: 'Система охлаждения', value: data.inspection_electrical_new },
-                    { section: 'brake_system_new', label: 'Электрооборудование', value: data.inspection_brake_system_new },
-                    { section: 'drive', label: 'Тормозная система', value: data.inspection_drive },
-                    { section: 'tires', label: 'Привод', value: data.inspection_tires },
-                    { section: 'suspension_front_rear', label: 'Резина', value: data.inspection_suspension_front_rear },
-                    { section: 'computer_diagnostics', label: 'Подвеска перед, зад', value: data.inspection_computer_diagnostics },
-                    { section: 'additional_equipment_new', label: 'Компьютерная Диагностика', value: data.inspection_additional_equipment_new },
-                    { section: 'final', label: 'Дополнительное оборудование', value: data.inspection_final }
-                ];
-                let pageNumber = 2;
-                inspectionFields.forEach(field => {
-                    const hasText = field.value && field.value.trim() !== '';
-                    const hasPhotos = this.state.currentPhotos[field.section] && this.state.currentPhotos[field.section].length > 0;
-                    if (hasText || hasPhotos) {
-                        const photos = hasPhotos ? this.state.currentPhotos[field.section] : [];
-                        const photosPerPage = 4;
-                        const photoGroups = [];
-                        for (let i = 0; i < photos.length; i += photosPerPage) {
-                            photoGroups.push(photos.slice(i, i + photosPerPage));
-                        }
-                        if (photoGroups.length === 0) {
-                            html += this.generateInspectionPage(field, hasText ? field.value : null, [], pageNumber, false, brand, model, currentDate);
-                            pageNumber++;
-                        } else {
-                            photoGroups.forEach((group, index) => {
-                                const isFirstPage = index === 0;
-                                const isContinued = index > 0;
-                                const pageText = isFirstPage && hasText ? field.value : null;
-                                html += this.generateInspectionPage(field, pageText, group, pageNumber, isContinued, brand, model, currentDate);
-                                pageNumber++;
-                            });
-                        }
-                    }
-                });
-                html += `</div>`;
                 return html;
             },
-            generateInspectionPage(field, text, photos, pageNumber, isContinued, brand, model, currentDate) {
+            generateInspectionPage(field, text, photos, currentPage, totalPages, isContinued, brand, model, currentDate) {
                 const photosPerRow = 2;
                 const maxPhotosPerPage = 4;
+
                 let html = `
                     <div class="pdf-page">
                         <div style="position: absolute; top: 5mm; right: 5mm; font-size: 30px; opacity: 0.1; color: #ccc; transform: rotate(-45deg);">motopodbor.ru</div>
@@ -2400,7 +2444,7 @@
                         <div style="display: grid; grid-template-columns: repeat(${photosPerRow}, 1fr); gap: 6px; margin-bottom: 12px;">
                     `;
                     photos.forEach((photo, index) => {
-                        const photoIndex = isContinued ? index + (pageNumber - 2) * maxPhotosPerPage : index;
+                        const photoIndex = isContinued ? index + (currentPage - 2) * maxPhotosPerPage : index;
                         html += `
                             <div style="text-align: center;">
                                 <img src="${photo.data}" style="max-width: 100%; max-height: 350px; width: auto; height: auto; object-fit: contain; border-radius: 4px; border: 1px solid #ddd;" alt="Фото ${photoIndex + 1}">
@@ -2415,11 +2459,68 @@
                             Отчет сгенерирован: ${currentDate} | Сергей Ландик 8 950 005-05-08 | motopodbor.ru
                         </div>
                         <div style="position: absolute; bottom: 5mm; right: 8mm; font-size: 9px; color: #666;">
-                            Страница ${pageNumber}
+                            Страница ${currentPage} из ${totalPages}
                         </div>
                     </div>
                 `;
                 return html;
+            },
+            generateAgreementPage(currentPage, totalPages, currentDate) {
+                return `
+                    <div class="pdf-page">
+                        <div style="position: absolute; top: 5mm; right: 5mm; font-size: 30px; opacity: 0.1; color: #ccc; transform: rotate(-45deg);">motopodbor.ru</div>
+                        <div style="text-align: center; margin-bottom: 20px;">
+                            <h1 style="font-size: 20px; margin-bottom: 6px; color: #333;">СОГЛАШЕНИЕ О КОНФИДЕНЦИАЛЬНОСТИ</h1>
+                            <p style="font-size: 12px; color: #666;">Motopodbor.ru PRO</p>
+                        </div>
+                        
+                        <div style="margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px; border: 1px solid #e9ecef;">
+                            <h2 style="font-size: 16px; margin: 0 0 12px 0; color: #333; text-align: center;">УСЛОВИЯ ИСПОЛЬЗОВАНИЯ ОТЧЕТА</h2>
+                            
+                            <div style="font-size: 11px; line-height: 1.5; color: #555;">
+                                <p style="margin-bottom: 10px;"><strong>В рамках нашего сотрудничества мы, «Motopodbor.ru PRO», договорились с вами, Клиентом, о следующем:</strong></p>
+                                
+                                <ul style="margin: 0 0 15px 0; padding-left: 20px;">
+                                    <li style="margin-bottom: 8px;">
+                                        <strong>Отчет — это ваша информация.</strong> Мы передаем вам готовый отчет о диагностике для вашего личного использования.
+                                    </li>
+                                    <li style="margin-bottom: 8px;">
+                                        <strong>Конфиденциальность — наш общий приоритет.</strong> Мы обязуемся не разглашать содержание отчета и данные о мотоцикле третьим лицам. С нашей стороны полная конфиденциальность.
+                                    </li>
+                                    <li style="margin-bottom: 8px;">
+                                        <strong>Передача отчета другим — только с вашего согласия.</strong> Если вы решите показать отчет другому лицу (например, потенциальному покупателю или другому механику), мы просим вас уведомить нас об этом устно. Это нужно для того, чтобы мы знали, кому и как предоставляется информация.
+                                    </li>
+                                    <li style="margin-bottom: 8px;">
+                                        <strong>Мы доверяем вам, вы доверяете нам.</strong> Эта договоренность строится на взаимном доверии. Мы уверены, что вы будете использовать отчет разумно, а вы можете быть уверены в нашей discretion.
+                                    </li>
+                                    <li style="margin-bottom: 8px;">
+                                        <strong>Мы всегда на связи.</strong> Если у вас возникнут вопросы по отчету или потребуется дополнительная консультация — вы всегда можете к нам обратиться.
+                                    </li>
+                                </ul>
+                                
+                                <div style="border-top: 1px solid #ddd; padding-top: 12px; margin-top: 15px;">
+                                    <p style="margin: 0; text-align: center;"><strong>С уважением,<br>Сергей Ландик<br>Motopodbor.ru PRO</strong></p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div style="background: #e8f4fd; border-radius: 6px; padding: 12px; margin-bottom: 15px; border-left: 4px solid #3498db;">
+                            <h3 style="font-size: 14px; margin: 0 0 8px 0; color: #2c3e50;">Контактная информация:</h3>
+                            <div style="font-size: 10px; color: #555;">
+                                <p style="margin: 4px 0;"><strong>Телефон:</strong> 8 950 005-05-08</p>
+                                <p style="margin: 4px 0;"><strong>Сайт:</strong> motopodbor.ru</p>
+                                <p style="margin: 4px 0;"><strong>Email:</strong> landik.motopodbor@gmail.com</p>
+                            </div>
+                        </div>
+                        
+                        <div style="position: absolute; bottom: 8mm; left: 8mm; right: 8mm; font-size: 9px; color: #666; text-align: center; border-top: 1px solid #eee; padding-top: 6px;">
+                            Отчет сгенерирован: ${currentDate} | Сергей Ландик 8 950 005-05-08 | motopodbor.ru
+                        </div>
+                        <div style="position: absolute; bottom: 5mm; right: 8mm; font-size: 9px; color: #666;">
+                            Страница ${currentPage} из ${totalPages}
+                        </div>
+                    </div>
+                `;
             },
             formatMoneyDisplay(value) {
                 if (!value) return 'Не указана';
@@ -3101,7 +3202,7 @@
                         const copyStatsBtn = document.getElementById('copyStatsBtn');
                         if (statsOutput) {
                             const now = new Date();
-                            statsOutput.textContent = `📊 Статистика МотоДиагностика PRO\n\n` +
+                            statsOutput.textContent = `📊 Статистика Motopodbor.ru PRO\n\n` +
                                 `📅 Период: ${now.toLocaleDateString('ru-RU')}\n` +
                                 `🏍️ Всего отчетов: ${app.state.reportsDatabase.length}\n` +
                                 `✅ Успешных сделок: ${app.state.reportsDatabase.filter(r => r.decision === '✅ Куплен').length}\n` +
