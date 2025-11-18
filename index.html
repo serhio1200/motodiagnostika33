@@ -772,7 +772,7 @@
                 </div>
                 <div class="settings-group">
                     <div class="settings-label">Уведомления</div>
-                    <div class="settings-description">Управление системными уведомления</div>
+                    <div class="settings-description">Управление системными уведомлениями</div>
                     <div class="toggle-container">
                         <span class="toggle-label">Звуковые уведомления</span>
                         <label class="toggle-switch">
@@ -2084,28 +2084,22 @@
             },
             generatePDFReportMultiPage() {
                 if (!this.validateForm()) return;
-                
                 try {
                     if (typeof window.jspdf === 'undefined') {
                         this.showToast('Ошибка: Библиотека jsPDF не загружена', 'warning');
                         return;
                     }
-                    
                     if (typeof html2canvas === 'undefined') {
                         this.showToast('Ошибка: Библиотека html2canvas не загружена', 'warning');
                         return;
                     }
-
                     const form = document.getElementById('diagnosticForm');
                     const formData = new FormData(form);
                     const data = Object.fromEntries(formData.entries());
-                    
                     this.showToast('Генерация улучшенного PDF отчета...', 'info');
-                    
                     const htmlContent = this.generatePDFHtmlContentMultiPage(data);
                     const { jsPDF } = window.jspdf;
                     const doc = new jsPDF('p', 'mm', 'a4');
-                    
                     doc.setProperties({
                         title: `Отчет по мотоциклу ${data.brand || ''} ${data.model || ''}`,
                         subject: 'Диагностический отчет',
@@ -2113,7 +2107,6 @@
                         keywords: 'мотоцикл, диагностика, отчет',
                         creator: 'МотоДиагностика PRO'
                     });
-
                     const tempContainer = document.createElement('div');
                     tempContainer.style.width = '210mm';
                     tempContainer.style.minHeight = '297mm';
@@ -2121,74 +2114,22 @@
                     tempContainer.style.background = 'white';
                     tempContainer.style.color = 'black';
                     tempContainer.style.fontFamily = 'Arial, sans-serif';
-                    tempContainer.style.position = 'fixed';
+                    tempContainer.style.position = 'absolute';
                     tempContainer.style.left = '-9999px';
-                    tempContainer.style.top = '0';
-                    tempContainer.style.zIndex = '-1000';
                     tempContainer.style.boxSizing = 'border-box';
-                    tempContainer.style.overflow = 'hidden';
-                    
                     tempContainer.innerHTML = htmlContent;
                     document.body.appendChild(tempContainer);
-
                     const pages = tempContainer.querySelectorAll('.pdf-page');
-                    let currentPage = 0;
-
-                    const generateNextPage = () => {
-                        if (currentPage >= pages.length) {
-                            // Все страницы сгенерированы - сохраняем PDF
-                            document.body.removeChild(tempContainer);
-                            
+                    const generatePage = (pageIndex) => {
+                        if (pageIndex >= pages.length) {
                             const filename = `Отчет_${(data.brand || 'мотоцикл').replace(/[^\w]/g, '_')}_${(data.model || '').replace(/[^\w]/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`;
-                            
-                            // Улучшенное сохранение для всех устройств
-                            const pdfBlob = doc.output('blob');
-                            const url = URL.createObjectURL(pdfBlob);
-                            
-                            if (this.state.isIOS) {
-                                // Для iOS открываем PDF в новом окне
-                                const newWindow = window.open('', '_blank');
-                                if (newWindow) {
-                                    newWindow.document.write(`
-                                        <html>
-                                            <head>
-                                                <title>${filename}</title>
-                                            </head>
-                                            <body style="margin: 0;">
-                                                <embed width="100%" height="100%" src="${url}" type="application/pdf" />
-                                                <p style="padding: 20px; text-align: center; font-family: Arial, sans-serif;">
-                                                    Если PDF не открылся автоматически, <a href="${url}" download="${filename}">нажмите здесь для скачивания</a>
-                                                </p>
-                                            </body>
-                                        </html>
-                                    `);
-                                    newWindow.document.close();
-                                    this.showToast('PDF открыт в новом окне. Для сохранения нажмите кнопку "Поделиться" и выберите "Сохранить в файлы".', 'info', 10000);
-                                } else {
-                                    // Если всплывающее окно заблокировано, создаем ссылку для скачивания
-                                    const link = document.createElement('a');
-                                    link.href = url;
-                                    link.download = filename;
-                                    link.style.display = 'none';
-                                    document.body.appendChild(link);
-                                    link.click();
-                                    document.body.removeChild(link);
-                                    this.showToast('PDF скачивается. Для iOS: откройте файл и сохраните через "Поделиться" → "Сохранить в файлы"', 'info', 10000);
-                                }
-                            } else {
-                                // Для других устройств используем стандартное сохранение
-                                doc.save(filename);
-                            }
-                            
-                            // Освобождаем память
-                            setTimeout(() => URL.revokeObjectURL(url), 1000);
-                            
+                            doc.save(filename);
+                            document.body.removeChild(tempContainer);
                             this.playSound('success');
-                            this.showToast('PDF отчет успешно сгенерирован!', 'success');
+                            this.showToast('PDF отчет успешно сгенерирован и скачан!', 'success');
                             return;
                         }
-                        
-                        const page = pages[currentPage];
+                        const page = pages[pageIndex];
                         html2canvas(page, {
                             scale: 2,
                             useCORS: true,
@@ -2202,24 +2143,19 @@
                             const imgData = canvas.toDataURL('image/png');
                             const imgWidth = 210;
                             const imgHeight = (canvas.height * imgWidth) / canvas.width;
-                            
-                            if (currentPage > 0) {
+                            if (pageIndex > 0) {
                                 doc.addPage();
                             }
-                            
                             doc.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight);
-                            currentPage++;
-                            generateNextPage();
+                            generatePage(pageIndex + 1);
                         }).catch(error => {
-                            document.body.removeChild(tempContainer);
                             console.error('Ошибка генерации страницы PDF:', error);
+                            document.body.removeChild(tempContainer);
                             this.playSound('error');
                             this.showToast('Ошибка при создании PDF отчета', 'warning');
                         });
                     };
-                    
-                    generateNextPage();
-                    
+                    generatePage(0);
                 } catch (e) {
                     console.error('Ошибка генерации PDF отчета:', e);
                     this.playSound('error');
