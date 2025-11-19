@@ -807,7 +807,7 @@
             <div class="card mt-20">
                 <h2 class="section-title">ℹ️ О приложении</h2>
                 <div class="settings-group">
-                    <p><strong>Версия:</strong> 2.6.0 PRO FINAL</p>
+                    <p><strong>Версия:</strong> 2.7.0 PRO FINAL</p>
                     <p><strong>Разработчик:</strong> Сергей Ландик</p>
                     <p><strong>Контакты:</strong> 8 950 005-05-08</p>
                     <p><strong>Сайт:</strong> motopodbor.ru</p>
@@ -843,7 +843,17 @@
     <div id="toastContainer" aria-live="polite" aria-atomic="true"></div>
     <script>
         const app = {
-            modules: {},
+            db: null,
+            indexedDB: {
+                name: 'MotopodborDB',
+                version: 1,
+                stores: {
+                    REPORTS: 'reports',
+                    INSPECTIONS: 'inspections',
+                    PHOTOS: 'photos',
+                    SETTINGS: 'settings'
+                }
+            },
             config: {
                 modelsDatabase: {
                     "Honda": ["CB125F", "CB300R", "CB500X", "CB650R", "CBR500R", "CBR650R", "CBR1000RR-R Fireblade", "CRF300L", "CRF450R", "Africa Twin", "Gold Wing", "Rebel 500", "Rebel 1100", "PCX160", "ADV160", "Forza 350", "CT125", "Monkey 125", "Super Cub C125", "NM4 Vultus", "VFR800F"],
@@ -914,45 +924,485 @@
                 isIOS: /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream,
                 currentPhotos: {}
             },
-            init() {
+            async init() {
                 try {
-                    this.state.reportsDatabase = JSON.parse(localStorage.getItem('motodiag_reports') || '[]');
-                    this.state.inspectionsDatabase = JSON.parse(localStorage.getItem('motodiag_inspections') || '[]');
-                    const savedPhotos = localStorage.getItem('motodiag_current_photos');
-                    if (savedPhotos) {
-                        this.state.currentPhotos = JSON.parse(savedPhotos);
+                    await this.initIndexedDB();
+                    await this.migrateFromLocalStorage();
+                    await this.loadDataFromIndexedDB();
+                    
+                    this.initBasicComponents();
+                    
+                    if ('serviceWorker' in navigator) {
+                        navigator.serviceWorker.register('data:text/javascript,' + encodeURIComponent(`
+                            const CACHE_NAME = 'motodiag-v2.7.0';
+                            const urlsToCache = ['/', '/index.html'];
+                            self.addEventListener('install', event => {
+                                event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(urlsToCache)));
+                            });
+                            self.addEventListener('fetch', event => {
+                                event.respondWith(caches.match(event.request).then(response => response || fetch(event.request)));
+                            });
+                        `)).catch(() => console.log('SW registration failed'));
                     }
-                } catch (e) {
-                    console.warn('Ошибка загрузки данных из localStorage:', e);
-                    this.state.reportsDatabase = [];
-                    this.state.inspectionsDatabase = [];
-                    this.state.currentPhotos = {};
+                    
+                    const versionDateEl = document.getElementById('appVersionDate');
+                    if (versionDateEl) versionDateEl.textContent = new Date().getFullYear();
+                    
+                    this.checkInspectionReminders();
+                    console.log('Motopodbor.ru PRO инициализирована с IndexedDB');
+                } catch (error) {
+                    console.error('Ошибка инициализации:', error);
+                    this.showToast('Ошибка загрузки приложения', 'warning');
+                    this.initBasicComponents();
                 }
-                Object.entries(this.modules).forEach(([name, module]) => {
-                    try {
-                        if (module.init) module.init();
-                    } catch (e) {
-                        console.error(`Ошибка инициализации модуля ${name}:`, e);
-                        this.showError('Ошибка загрузки модуля: ' + name);
-                    }
+            },
+            async initIndexedDB() {
+                return new Promise((resolve, reject) => {
+                    const request = indexedDB.open(this.indexedDB.name, this.indexedDB.version);
+                    
+                    request.onerror = () => reject(request.error);
+                    request.onsuccess = (event) => {
+                        this.db = event.target.result;
+                        resolve();
+                    };
+                    
+                    request.onupgradeneeded = (event) => {
+                        const db = event.target.result;
+                        
+                        // Создаем хранилище для отчетов
+                        if (!db.objectStoreNames.contains(this.indexedDB.stores.REPORTS)) {
+                            const reportsStore = db.createObjectStore(this.indexedDB.stores.REPORTS, { 
+                                keyPath: 'id' 
+                            });
+                            reportsStore.createIndex('timestamp', 'timestamp', { unique: false });
+                            reportsStore.createIndex('brand', 'brand', { unique: false });
+                        }
+                        
+                        // Создаем хранилище для проверок
+                        if (!db.objectStoreNames.contains(this.indexedDB.stores.INSPECTIONS)) {
+                            const inspectionsStore = db.createObjectStore(this.indexedDB.stores.INSPECTIONS, { 
+                                keyPath: 'id' 
+                            });
+                            inspectionsStore.createIndex('timestamp', 'timestamp', { unique: false });
+                            inspectionsStore.createIndex('date', 'date', { unique: false });
+                            inspectionsStore.createIndex('status', 'status', { unique: false });
+                        }
+                        
+                        // Создаем хранилище для фотографий
+                        if (!db.objectStoreNames.contains(this.indexedDB.stores.PHOTOS)) {
+                            const photosStore = db.createObjectStore(this.indexedDB.stores.PHOTOS, { 
+                                keyPath: 'id',
+                                autoIncrement: true 
+                            });
+                            photosStore.createIndex('reportId', 'reportId', { unique: false });
+                            photosStore.createIndex('section', 'section', { unique: false });
+                        }
+                        
+                        // Создаем хранилище для настроек
+                        if (!db.objectStoreNames.contains(this.indexedDB.stores.SETTINGS)) {
+                            const settingsStore = db.createObjectStore(this.indexedDB.stores.SETTINGS, { 
+                                keyPath: 'key' 
+                            });
+                        }
+                    };
                 });
-                this.initBasicComponents();
-                if ('serviceWorker' in navigator) {
-                    navigator.serviceWorker.register('data:text/javascript,' + encodeURIComponent(`
-                        const CACHE_NAME = 'motodiag-v2.6.0';
-                        const urlsToCache = ['/', '/index.html'];
-                        self.addEventListener('install', event => {
-                            event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(urlsToCache)));
+            },
+            async migrateFromLocalStorage() {
+                return new Promise((resolve) => {
+                    // Миграция отчетов
+                    try {
+                        const localStorageReports = localStorage.getItem('motodiag_reports');
+                        if (localStorageReports) {
+                            const reports = JSON.parse(localStorageReports);
+                            reports.forEach(report => {
+                                this.saveReportToIndexedDB(report);
+                            });
+                            localStorage.removeItem('motodiag_reports');
+                        }
+                    } catch (e) {
+                        console.warn('Ошибка миграции отчетов:', e);
+                    }
+                    
+                    // Миграция проверок
+                    try {
+                        const localStorageInspections = localStorage.getItem('motodiag_inspections');
+                        if (localStorageInspections) {
+                            const inspections = JSON.parse(localStorageInspections);
+                            inspections.forEach(inspection => {
+                                this.saveInspectionToIndexedDB(inspection);
+                            });
+                            localStorage.removeItem('motodiag_inspections');
+                        }
+                    } catch (e) {
+                        console.warn('Ошибка миграции проверок:', e);
+                    }
+                    
+                    resolve();
+                });
+            },
+            async loadDataFromIndexedDB() {
+                return new Promise((resolve, reject) => {
+                    if (!this.db) {
+                        reject(new Error('База данных не инициализирована'));
+                        return;
+                    }
+                    
+                    const transaction = this.db.transaction([
+                        this.indexedDB.stores.REPORTS, 
+                        this.indexedDB.stores.INSPECTIONS
+                    ], 'readonly');
+                    
+                    const reportsStore = transaction.objectStore(this.indexedDB.stores.REPORTS);
+                    const inspectionsStore = transaction.objectStore(this.indexedDB.stores.INSPECTIONS);
+                    
+                    const reportsRequest = reportsStore.getAll();
+                    const inspectionsRequest = inspectionsStore.getAll();
+                    
+                    reportsRequest.onsuccess = () => {
+                        this.state.reportsDatabase = reportsRequest.result;
+                    };
+                    
+                    inspectionsRequest.onsuccess = () => {
+                        this.state.inspectionsDatabase = inspectionsRequest.result;
+                    };
+                    
+                    transaction.oncomplete = () => {
+                        console.log('Данные загружены из IndexedDB:', {
+                            reports: this.state.reportsDatabase.length,
+                            inspections: this.state.inspectionsDatabase.length
                         });
-                        self.addEventListener('fetch', event => {
-                            event.respondWith(caches.match(event.request).then(response => response || fetch(event.request)));
+                        resolve();
+                    };
+                    
+                    transaction.onerror = () => {
+                        reject(transaction.error);
+                    };
+                });
+            },
+            async saveReportToIndexedDB(report) {
+                return new Promise((resolve, reject) => {
+                    if (!this.db) {
+                        reject(new Error('База данных не инициализирована'));
+                        return;
+                    }
+                    
+                    const transaction = this.db.transaction([this.indexedDB.stores.REPORTS], 'readwrite');
+                    const store = transaction.objectStore(this.indexedDB.stores.REPORTS);
+                    
+                    const request = store.put(report);
+                    
+                    request.onsuccess = () => resolve();
+                    request.onerror = () => reject(request.error);
+                });
+            },
+            async saveInspectionToIndexedDB(inspection) {
+                return new Promise((resolve, reject) => {
+                    if (!this.db) {
+                        reject(new Error('База данных не инициализирована'));
+                        return;
+                    }
+                    
+                    const transaction = this.db.transaction([this.indexedDB.stores.INSPECTIONS], 'readwrite');
+                    const store = transaction.objectStore(this.indexedDB.stores.INSPECTIONS);
+                    
+                    const request = store.put(inspection);
+                    
+                    request.onsuccess = () => resolve();
+                    request.onerror = () => reject(request.error);
+                });
+            },
+            async savePhotosToIndexedDB(reportId, photos) {
+                return new Promise((resolve, reject) => {
+                    if (!this.db || !photos || Object.keys(photos).length === 0) {
+                        resolve();
+                        return;
+                    }
+                    
+                    const transaction = this.db.transaction([this.indexedDB.stores.PHOTOS], 'readwrite');
+                    const store = transaction.objectStore(this.indexedDB.stores.PHOTOS);
+                    
+                    // Сначала удаляем старые фото для этого отчета
+                    const index = store.index('reportId');
+                    const clearRequest = index.openCursor(IDBKeyRange.only(reportId));
+                    
+                    clearRequest.onsuccess = () => {
+                        const cursor = clearRequest.result;
+                        if (cursor) {
+                            store.delete(cursor.primaryKey);
+                            cursor.continue();
+                        } else {
+                            // После удаления старых фото, сохраняем новые
+                            let photosCount = 0;
+                            let totalPhotos = 0;
+                            
+                            // Подсчитываем общее количество фото
+                            Object.values(photos).forEach(sectionPhotos => {
+                                totalPhotos += sectionPhotos.length;
+                            });
+                            
+                            if (totalPhotos === 0) {
+                                resolve();
+                                return;
+                            }
+                            
+                            Object.keys(photos).forEach(section => {
+                                photos[section].forEach(photo => {
+                                    const photoRecord = {
+                                        reportId: reportId,
+                                        section: section,
+                                        data: photo.data,
+                                        name: photo.name,
+                                        timestamp: photo.timestamp,
+                                        compressed: photo.compressed
+                                    };
+                                    
+                                    const addRequest = store.add(photoRecord);
+                                    
+                                    addRequest.onsuccess = () => {
+                                        photosCount++;
+                                        if (photosCount === totalPhotos) {
+                                            resolve();
+                                        }
+                                    };
+                                    
+                                    addRequest.onerror = () => {
+                                        console.error('Ошибка сохранения фото:', addRequest.error);
+                                        photosCount++;
+                                        if (photosCount === totalPhotos) {
+                                            resolve(); // Все равно разрешаем, даже с ошибками
+                                        }
+                                    };
+                                });
+                            });
+                        }
+                    };
+                    
+                    clearRequest.onerror = () => {
+                        console.error('Ошибка очистки старых фото:', clearRequest.error);
+                        reject(clearRequest.error);
+                    };
+                    
+                    transaction.onerror = () => {
+                        reject(transaction.error);
+                    };
+                });
+            },
+            async loadPhotosFromIndexedDB(reportId) {
+                return new Promise((resolve, reject) => {
+                    if (!this.db) {
+                        resolve({});
+                        return;
+                    }
+                    
+                    const transaction = this.db.transaction([this.indexedDB.stores.PHOTOS], 'readonly');
+                    const store = transaction.objectStore(this.indexedDB.stores.PHOTOS);
+                    const index = store.index('reportId');
+                    const request = index.getAll(IDBKeyRange.only(reportId));
+                    
+                    request.onsuccess = () => {
+                        const photos = {};
+                        request.result.forEach(photoRecord => {
+                            if (!photos[photoRecord.section]) {
+                                photos[photoRecord.section] = [];
+                            }
+                            photos[photoRecord.section].push({
+                                id: photoRecord.id,
+                                data: photoRecord.data,
+                                name: photoRecord.name,
+                                timestamp: photoRecord.timestamp,
+                                compressed: photoRecord.compressed
+                            });
                         });
-                    `)).catch(() => console.log('SW registration failed'));
+                        resolve(photos);
+                    };
+                    
+                    request.onerror = () => {
+                        reject(request.error);
+                    };
+                });
+            },
+            async deleteReportFromIndexedDB(reportId) {
+                return new Promise((resolve, reject) => {
+                    if (!this.db) {
+                        reject(new Error('База данных не инициализирована'));
+                        return;
+                    }
+                    
+                    const transaction = this.db.transaction([
+                        this.indexedDB.stores.REPORTS,
+                        this.indexedDB.stores.INSPECTIONS,
+                        this.indexedDB.stores.PHOTOS
+                    ], 'readwrite');
+                    
+                    const reportsStore = transaction.objectStore(this.indexedDB.stores.REPORTS);
+                    const inspectionsStore = transaction.objectStore(this.indexedDB.stores.INSPECTIONS);
+                    const photosStore = transaction.objectStore(this.indexedDB.stores.PHOTOS);
+                    
+                    // Удаляем отчет
+                    const reportRequest = reportsStore.delete(reportId);
+                    
+                    // Удаляем связанные проверки
+                    const inspectionsIndex = inspectionsStore.index('reportId');
+                    const inspectionsRequest = inspectionsIndex.openCursor(IDBKeyRange.only(reportId));
+                    
+                    inspectionsRequest.onsuccess = () => {
+                        const cursor = inspectionsRequest.result;
+                        if (cursor) {
+                            inspectionsStore.delete(cursor.primaryKey);
+                            cursor.continue();
+                        }
+                    };
+                    
+                    // Удаляем связанные фото
+                    const photosIndex = photosStore.index('reportId');
+                    const photosRequest = photosIndex.openCursor(IDBKeyRange.only(reportId));
+                    
+                    photosRequest.onsuccess = () => {
+                        const cursor = photosRequest.result;
+                        if (cursor) {
+                            photosStore.delete(cursor.primaryKey);
+                            cursor.continue();
+                        }
+                    };
+                    
+                    transaction.oncomplete = () => resolve();
+                    transaction.onerror = () => reject(transaction.error);
+                });
+            },
+            async saveReportToDatabase() {
+                if (!this.validateForm()) return;
+                
+                try {
+                    const form = document.getElementById('diagnosticForm');
+                    const formData = new FormData(form);
+                    const data = Object.fromEntries(formData.entries());
+                    const brand = data.brand === 'Другая марка' ? data.brand_custom : data.brand;
+                    const model = data.model === 'Другая модель' ? data.model_custom : data.model;
+                    
+                    const report = {
+                        id: this.state.editingReportId || Date.now().toString(),
+                        timestamp: new Date().toISOString(),
+                        ...data,
+                        brand,
+                        model,
+                        generated_text: document.getElementById('output')?.textContent || ''
+                    };
+                    
+                    // Сохраняем отчет в IndexedDB
+                    await this.saveReportToIndexedDB(report);
+                    
+                    // Сохраняем фотографии в IndexedDB
+                    if (Object.keys(this.state.currentPhotos).length > 0) {
+                        await this.savePhotosToIndexedDB(report.id, this.state.currentPhotos);
+                    }
+                    
+                    // Обновляем локальное состояние
+                    const existingIndex = this.state.reportsDatabase.findIndex(r => r.id === report.id);
+                    if (existingIndex >= 0) {
+                        this.state.reportsDatabase[existingIndex] = report;
+                    } else {
+                        this.state.reportsDatabase.push(report);
+                    }
+                    
+                    if (data.decision === '📅 Запланировать проверку') {
+                        await this.saveInspectionToDatabase(data, report.id);
+                    }
+                    
+                    this.playSound('success');
+                    this.showToast('Отчет успешно сохранен в базу данных!', 'success');
+                    this.loadReportsList();
+                    this.updateStatistics();
+                    this.state.editingReportId = null;
+                    
+                } catch (e) {
+                    console.error('Ошибка сохранения отчета:', e);
+                    this.playSound('error');
+                    this.showToast('Ошибка при сохранении отчета', 'warning');
                 }
-                const versionDateEl = document.getElementById('appVersionDate');
-                if (versionDateEl) versionDateEl.textContent = new Date().getFullYear();
-                this.checkInspectionReminders();
-                console.log('Motopodbor.ru PRO инициализирована');
+            },
+            async deleteReport(reportId) {
+                if (!confirm('Вы уверены, что хотите удалить этот отчет?')) return;
+                
+                try {
+                    await this.deleteReportFromIndexedDB(reportId);
+                    
+                    // Обновляем локальное состояние
+                    this.state.reportsDatabase = this.state.reportsDatabase.filter(r => r.id !== reportId);
+                    this.state.inspectionsDatabase = this.state.inspectionsDatabase.filter(i => i.reportId !== reportId);
+                    
+                    this.loadReportsList();
+                    this.loadInspectionsList();
+                    this.updateStatistics();
+                    this.playSound('success');
+                    this.showToast('Отчет успешно удален', 'success');
+                } catch (e) {
+                    console.error('Ошибка удаления отчета:', e);
+                    this.playSound('error');
+                    this.showToast('Ошибка при удалении отчета', 'warning');
+                }
+            },
+            async editReport(reportId) {
+                try {
+                    const report = this.state.reportsDatabase.find(r => r.id === reportId);
+                    if (!report) return;
+                    
+                    this.state.editingReportId = reportId;
+                    this.state.currentPhotos = {};
+                    
+                    // Загружаем фотографии из IndexedDB
+                    const photos = await this.loadPhotosFromIndexedDB(reportId);
+                    this.state.currentPhotos = photos;
+                    
+                    // Заполняем форму данными отчета
+                    Object.keys(report).forEach(key => {
+                        const el = document.getElementById(key);
+                        if (el && report[key] !== undefined && report[key] !== null) {
+                            el.value = report[key];
+                        }
+                    });
+                    
+                    // Обновляем превью фотографий
+                    this.loadPhotoPreviews();
+                    
+                    const brandSelect = document.getElementById('brand');
+                    if (brandSelect && report.brand) {
+                        brandSelect.value = report.brand;
+                        brandSelect.dispatchEvent(new Event('change'));
+                        setTimeout(() => {
+                            const modelSelect = document.getElementById('model');
+                            if (modelSelect && report.model) {
+                                modelSelect.value = report.model;
+                                modelSelect.dispatchEvent(new Event('change'));
+                            }
+                        }, 0);
+                    }
+                    
+                    this.updateUIForEditMode(report);
+                    this.updateProgress();
+                    
+                    const reportTab = document.querySelector('.nav-tab[data-tab="report"]');
+                    if (reportTab) reportTab.click();
+                    
+                    this.playSound('click');
+                    this.showToast(`Редактирование отчета: ${report.brand} ${report.model}`, 'info');
+                } catch (e) {
+                    console.error('Ошибка загрузки отчета для редактирования:', e);
+                    this.playSound('error');
+                    this.showToast('Ошибка при загрузке отчета', 'warning');
+                }
+            },
+            updateUIForEditMode(report) {
+                const brandCustom = document.getElementById('brand_custom');
+                const modelCustom = document.getElementById('model_custom');
+                const inspectionFields = document.getElementById('inspectionFields');
+                const auctionLotGroup = document.getElementById('auctionLotNumberGroup');
+                
+                if (brandCustom) brandCustom.classList.toggle('hidden', report.brand !== 'Другая марка');
+                if (modelCustom) modelCustom.classList.toggle('hidden', report.model !== 'Другая модель');
+                if (inspectionFields) inspectionFields.classList.toggle('hidden', report.decision !== '📅 Запланировать проверку');
+                if (auctionLotGroup && report.auction_type) {
+                    this.toggleAuctionLotField(report.auction_type);
+                }
             },
             initBasicComponents() {
                 this.initNavigation();
@@ -974,45 +1424,37 @@
                 photoInputs.forEach(input => {
                     input.addEventListener('change', (e) => {
                         const section = e.target.getAttribute('data-section');
-                        this.handlePhotoUploadImproved(section, e.target.files);
+                        this.handlePhotoUpload(section, e.target.files);
                         e.target.value = '';
                     });
                 });
                 console.log('Система загрузки фотографий инициализирована');
             },
-            handlePhotoUploadImproved(section, files) {
+            handlePhotoUpload(section, files) {
                 if (!files || files.length === 0) return;
+                
                 if (!this.state.currentPhotos[section]) {
                     this.state.currentPhotos[section] = [];
                 }
+                
                 const maxPhotos = (section === 'exterior') ? 1 : 10;
                 const currentCount = this.state.currentPhotos[section].length;
                 const remainingSlots = maxPhotos - currentCount;
+                
                 if (remainingSlots <= 0) {
                     this.showToast(`Достигнут лимит в ${maxPhotos} фотографий для этого раздела`, 'warning');
                     return;
                 }
+                
                 const filesToProcess = Array.from(files).slice(0, remainingSlots);
                 let processedCount = 0;
-                let totalSize = 0;
-                Object.values(this.state.currentPhotos).forEach(photos => {
-                    photos.forEach(photo => {
-                        totalSize += photo.data.length;
-                    });
-                });
-                // УВЕЛИЧИЛИ ЛИМИТ ХРАНИЛИЩА ДО 200 МБ
-                const maxSize = 200 * 1024 * 1024;
+                
                 filesToProcess.forEach(file => {
                     if (file.type.startsWith('image/')) {
                         this.compressImage(file).then(compressedFile => {
                             const reader = new FileReader();
                             reader.onload = (e) => {
                                 const base64Data = e.target.result;
-                                if (totalSize + base64Data.length > maxSize) {
-                                    this.showToast('Внимание: Размер фотографий接近 лимита хранилища. Некоторые фото не были добавлены.', 'warning');
-                                    return;
-                                }
-                                totalSize += base64Data.length;
                                 this.state.currentPhotos[section].push({
                                     id: Date.now() + Math.random(),
                                     data: base64Data,
@@ -1020,16 +1462,13 @@
                                     timestamp: new Date().toISOString(),
                                     compressed: true
                                 });
+                                
                                 processedCount++;
                                 if (processedCount === filesToProcess.length) {
-                                    this.saveCurrentPhotosImproved();
                                     this.updatePhotoPreview(section);
                                     this.updatePhotoCounter(section);
                                     this.playSound('success');
                                     this.showToast(`Добавлено ${processedCount} фотографий в раздел "${this.getSectionName(section)}"`, 'success');
-                                    if (totalSize > maxSize * 0.8) {
-                                        this.showToast('Внимание: Размер фотографий接近 лимита хранилища', 'warning');
-                                    }
                                 }
                             };
                             reader.readAsDataURL(compressedFile);
@@ -1038,11 +1477,6 @@
                             const reader = new FileReader();
                             reader.onload = (e) => {
                                 const base64Data = e.target.result;
-                                if (totalSize + base64Data.length > maxSize) {
-                                    this.showToast('Внимание: Размер фотографий接近 лимита хранилища. Некоторые фото не были добавлены.', 'warning');
-                                    return;
-                                }
-                                totalSize += base64Data.length;
                                 this.state.currentPhotos[section].push({
                                     id: Date.now() + Math.random(),
                                     data: base64Data,
@@ -1050,16 +1484,13 @@
                                     timestamp: new Date().toISOString(),
                                     compressed: false
                                 });
+                                
                                 processedCount++;
                                 if (processedCount === filesToProcess.length) {
-                                    this.saveCurrentPhotosImproved();
                                     this.updatePhotoPreview(section);
                                     this.updatePhotoCounter(section);
                                     this.playSound('success');
                                     this.showToast(`Добавлено ${processedCount} фотографий в раздел "${this.getSectionName(section)}"`, 'success');
-                                    if (totalSize > maxSize * 0.8) {
-                                        this.showToast('Внимание: Размер фотографий接近 лимита хранилища', 'warning');
-                                    }
                                 }
                             };
                             reader.readAsDataURL(file);
@@ -2584,38 +3015,6 @@
                     return amount + ' руб';
                 }
             },
-            saveReportToDatabase() {
-                if (!this.validateForm()) return;
-                try {
-                    const form = document.getElementById('diagnosticForm');
-                    const formData = new FormData(form);
-                    const data = Object.fromEntries(formData.entries());
-                    const brand = data.brand === 'Другая марка' ? data.brand_custom : data.brand;
-                    const model = data.model === 'Другая модель' ? data.model_custom : data.model;
-                    const report = {
-                        id: Date.now().toString(),
-                        timestamp: new Date().toISOString(),
-                        ...data,
-                        brand,
-                        model,
-                        generated_text: document.getElementById('output')?.textContent || '',
-                        photos: JSON.parse(JSON.stringify(this.state.currentPhotos))
-                    };
-                    this.state.reportsDatabase.push(report);
-                    localStorage.setItem('motodiag_reports', JSON.stringify(this.state.reportsDatabase));
-                    if (data.decision === '📅 Запланировать проверку') {
-                        this.saveInspectionToDatabase(data, report.id);
-                    }
-                    this.playSound('success');
-                    this.showToast('Отчет успешно сохранен в базу данных!', 'success');
-                    this.loadReportsList();
-                    this.updateStatistics();
-                } catch (e) {
-                    console.error('Ошибка сохранения отчета:', e);
-                    this.playSound('error');
-                    this.showToast('Ошибка при сохранении отчета', 'warning');
-                }
-            },
             saveInspectionToDatabase(data, reportId) {
                 try {
                     const inspection = {
@@ -2635,7 +3034,7 @@
                         reminded: false
                     };
                     this.state.inspectionsDatabase.push(inspection);
-                    localStorage.setItem('motodiag_inspections', JSON.stringify(this.state.inspectionsDatabase));
+                    this.saveInspectionToIndexedDB(inspection);
                     this.playSound('success');
                     this.showToast('Проверка успешно запланирована!', 'success');
                     this.loadInspectionsList();
@@ -2839,66 +3238,10 @@
                 if (reportModal) reportModal.classList.remove('hidden');
                 this.playSound('click');
             },
-            editReport(reportId) {
-                const report = this.state.reportsDatabase.find(r => r.id === reportId);
-                if (!report) return;
-                this.state.editingReportId = reportId;
-                this.state.currentPhotos = {};
-                Object.keys(report).forEach(key => {
-                    const el = document.getElementById(key);
-                    if (el && report[key] !== undefined && report[key] !== null) {
-                        el.value = report[key];
-                    }
-                });
-                if (report.photos) {
-                    this.state.currentPhotos = JSON.parse(JSON.stringify(report.photos));
-                    this.saveCurrentPhotosImproved();
-                    this.loadPhotoPreviews();
-                }
-                const brandSelect = document.getElementById('brand');
-                if (brandSelect && report.brand) {
-                    brandSelect.value = report.brand;
-                    brandSelect.dispatchEvent(new Event('change'));
-                    setTimeout(() => {
-                        const modelSelect = document.getElementById('model');
-                        if (modelSelect && report.model) {
-                            modelSelect.value = report.model;
-                            modelSelect.dispatchEvent(new Event('change'));
-                        }
-                    }, 0);
-                }
-                const brandCustom = document.getElementById('brand_custom');
-                const modelCustom = document.getElementById('model_custom');
-                const inspectionFields = document.getElementById('inspectionFields');
-                const auctionLotGroup = document.getElementById('auctionLotNumberGroup');
-                if (brandCustom) brandCustom.classList.toggle('hidden', report.brand !== 'Другая марка');
-                if (modelCustom) modelCustom.classList.toggle('hidden', report.model !== 'Другая модель');
-                if (inspectionFields) inspectionFields.classList.toggle('hidden', report.decision !== '📅 Запланировать проверку');
-                if (auctionLotGroup && report.auction_type) {
-                    this.toggleAuctionLotField(report.auction_type);
-                }
-                this.updateProgress();
-                const reportTab = document.querySelector('.nav-tab[data-tab="report"]');
-                if (reportTab) reportTab.click();
-                this.playSound('click');
-                this.showToast(`Редактирование отчета: ${report.brand} ${report.model}`, 'info');
-            },
-            deleteReport(reportId) {
-                if (!confirm('Вы уверены, что хотите удалить этот отчет?')) return;
-                this.state.reportsDatabase = this.state.reportsDatabase.filter(r => r.id !== reportId);
-                localStorage.setItem('motodiag_reports', JSON.stringify(this.state.reportsDatabase));
-                this.state.inspectionsDatabase = this.state.inspectionsDatabase.filter(i => i.reportId !== reportId);
-                localStorage.setItem('motodiag_inspections', JSON.stringify(this.state.inspectionsDatabase));
-                this.loadReportsList();
-                this.loadInspectionsList();
-                this.updateStatistics();
-                this.playSound('success');
-                this.showToast('Отчет успешно удален', 'success');
-            },
             exportAllData() {
                 try {
                     const allData = {
-                        version: '2.6.0',
+                        version: '2.7.0',
                         exportDate: new Date().toISOString(),
                         reports: this.state.reportsDatabase,
                         inspections: this.state.inspectionsDatabase,
@@ -3126,7 +3469,7 @@
                 const inspection = this.state.inspectionsDatabase.find(i => i.id === inspectionId);
                 if (inspection) {
                     inspection.status = 'completed';
-                    localStorage.setItem('motodiag_inspections', JSON.stringify(this.state.inspectionsDatabase));
+                    this.saveInspectionToIndexedDB(inspection);
                     this.loadInspectionsList();
                     this.updateStatistics();
                     this.playSound('completion');
@@ -3141,7 +3484,9 @@
             deleteInspection(inspectionId) {
                 if (!confirm('Вы уверены, что хотите удалить эту проверку?')) return;
                 this.state.inspectionsDatabase = this.state.inspectionsDatabase.filter(i => i.id !== inspectionId);
-                localStorage.setItem('motodiag_inspections', JSON.stringify(this.state.inspectionsDatabase));
+                const transaction = this.db.transaction([this.indexedDB.stores.INSPECTIONS], 'readwrite');
+                const store = transaction.objectStore(this.indexedDB.stores.INSPECTIONS);
+                store.delete(inspectionId);
                 this.loadInspectionsList();
                 this.updateStatistics();
                 this.playSound('success');
@@ -3151,7 +3496,12 @@
                 if (!confirm('Вы уверены, что хотите удалить все завершенные проверки?')) return;
                 const completedCount = this.state.inspectionsDatabase.filter(i => i.status === 'completed').length;
                 this.state.inspectionsDatabase = this.state.inspectionsDatabase.filter(i => i.status !== 'completed');
-                localStorage.setItem('motodiag_inspections', JSON.stringify(this.state.inspectionsDatabase));
+                const transaction = this.db.transaction([this.indexedDB.stores.INSPECTIONS], 'readwrite');
+                const store = transaction.objectStore(this.indexedDB.stores.INSPECTIONS);
+                const completedInspections = this.state.inspectionsDatabase.filter(i => i.status === 'completed');
+                completedInspections.forEach(inspection => {
+                    store.delete(inspection.id);
+                });
                 this.loadInspectionsList();
                 this.updateStatistics();
                 this.playSound('success');
@@ -3172,12 +3522,14 @@
                         );
                         this.playSound('warning');
                         inspection.reminded = true;
-                        localStorage.setItem('motodiag_inspections', JSON.stringify(this.state.inspectionsDatabase));
+                        this.saveInspectionToIndexedDB(inspection);
                     }
                 });
                 setTimeout(() => this.checkInspectionReminders(), 30 * 60 * 1000);
             }
         };
+
+        // Инициализация приложения
         document.addEventListener('DOMContentLoaded', function() {
             try {
                 app.init();
